@@ -14,8 +14,8 @@ class system():
         self.w02 = w02 #this gives energy spacing for hbar = 1
         self.w12 = w12
         self.w01 = self.w02 - self.w12
-        self.Omega_Rp = Omega_Rp
-        self.Omega_Rc = Omega_Rc
+        self.Omega_Rp = Omega_Rp #Rabi frequency for probe laser
+        self.Omega_Rc = Omega_Rc #Rabi frequency for coupling laser
         self.wp = wp #Probe Frequency
         self.wc = wc #Coupling Frequency
 
@@ -25,52 +25,65 @@ class system():
         self.raise02 = fock(3, 2) * fock(3, 0).dag() #|2><0|
         self.raise12 = fock(3, 2) * fock(3, 1).dag() #|2><1|
 
-    def MakeHamiltonian(self,doRWA,doAdiabaticElim):
+    def MakeHamiltonian(self,doRWA):
 
         #We work in the interaction picture in a frame rotating with HD = hbar(wp - wc) |1><1| + hbar(wp) |2><2|
-        
-        if not doAdiabaticElim:
 
-            if doRWA:
+        #Adiabatic Elimination:
+        #reduce to 2-state picture.
+        #Here we assume the population of the |2> state is always very low due to large detunings and spontaneous emission.
+        #Of course, RWA is applied.
 
-                #probe (0 -> 2)
-                H_int_p = 0.5 * self.hbar * self.Omega_Rp * (self.raise02 + self.raise02.dag())
-                #coupling (2 -> 1)
-                H_int_c = 0.5 * self.hbar * self.Omega_Rc * (self.raise12 + self.raise12.dag())
-                H_int = H_int_p + H_int_c
-                H = -self.hbar * self.delta2 * fock_dm(3,1) - self.hbar * self.delta1 * fock_dm(3,2) + H_int
+        Omega_eff = self.Omega_Rp * self.Omega_Rc / (2 * self.delta1)
+        ACSS = (self.Omega_Rp ** 2 - self.Omega_Rc ** 2)/(4 * self.delta1)
+        delta_eff = self.delta2 + ACSS
+            
+        H_eff = 0.5 * self.hbar * (Omega_eff * sigmax() - 2 * delta_eff * fock_dm(2,1))
 
-            else:
+        #Without Adiabatic Elimination:
+        if doRWA:
 
-                #probe (0 -> 2)
-                H_int_p1 = self.hbar * self.Omega_Rp * self.raise02
-                def H_int_p1_coeff(t,args):
-                    return 0.5 * (1 + np.exp(2j * self.wp * t))
-                H_int_p2 = self.hbar * self.Omega_Rp * self.raise02.dag()
-                def H_int_p2_coeff(t,args):
-                    return 0.5 * (1 + np.exp(-2j * self.wp * t))
+            #probe (0 -> 2)
+            H_int_p = 0.5 * self.hbar * self.Omega_Rp * (self.raise02 + self.raise02.dag())
+            #coupling (2 -> 1)
+            H_int_c = 0.5 * self.hbar * self.Omega_Rc * (self.raise12 + self.raise12.dag())
+            H_int = H_int_p + H_int_c
+            H = -self.hbar * self.delta2 * fock_dm(3,1) - self.hbar * self.delta1 * fock_dm(3,2) + H_int
+
+        else:
+
+            #probe (0 -> 2)
+            H_int_p1 = self.hbar * self.Omega_Rp * self.raise02
+            def H_int_p1_coeff(t,args):
+                return 0.5 * (1 + np.exp(2j * self.wp * t))
+            H_int_p2 = self.hbar * self.Omega_Rp * self.raise02.dag()
+            def H_int_p2_coeff(t,args):
+                return 0.5 * (1 + np.exp(-2j * self.wp * t))
                 
-                #coupling (2 -> 1)
-                H_int_c1 = self.hbar * self.Omega_Rc * self.raise12
-                def H_int_c1_coeff(t,args):
-                    return 0.5 * (1 + np.exp(2j * self.wc * t))
-                H_int_c2 = self.hbar * self.Omega_Rc * self.raise12.dag()
-                def H_int_c2_coeff(t,args):
-                    return 0.5 * (1 + np.exp(-2j * self.wc * t))
+            #coupling (2 -> 1)
+            H_int_c1 = self.hbar * self.Omega_Rc * self.raise12
+            def H_int_c1_coeff(t,args):
+                return 0.5 * (1 + np.exp(2j * self.wc * t))
+            H_int_c2 = self.hbar * self.Omega_Rc * self.raise12.dag()
+            def H_int_c2_coeff(t,args):
+                return 0.5 * (1 + np.exp(-2j * self.wc * t))
                 
-                H = [-self.hbar * self.delta2 * fock_dm(3,1),- self.hbar * self.delta1 * fock_dm(3,2)
-                     ,[H_int_p1,H_int_p1_coeff],[H_int_p2,H_int_p2_coeff]
-                     ,[H_int_c1,H_int_c1_coeff],[H_int_c2,H_int_c2_coeff]]
+            H = [-self.hbar * self.delta2 * fock_dm(3,1),- self.hbar * self.delta1 * fock_dm(3,2)
+                 ,[H_int_p1,H_int_p1_coeff],[H_int_p2,H_int_p2_coeff]
+                 ,[H_int_c1,H_int_c1_coeff],[H_int_c2,H_int_c2_coeff]]
                 
-        return H
+        return H_eff,H
 
-    def TransformFrame(self,rhoOutTilda,times):
+    def TransformFrame(self,rhoOutTilda,rhoOutAETilda,times):
         rhoOut = []
+        rhoOutAE = []
         for i in range(len(times)):
             t = times[i]
             U = fock_dm(3,0) + fock_dm(3,2) * np.exp(1j * self.wp * t) + fock_dm(3,1) * np.exp(1j * (self.wp - self.wc) * t)
+            U_AE = fock_dm(2,0) + fock_dm(2,1) * np.exp(1j * (self.wp - self.wc) * t)
             rhoOut.append(U.dag() * rhoOutTilda[i] * U)
-        return rhoOut
+            rhoOutAE.append(U_AE.dag() * rhoOutAETilda[i] * U_AE)
+        return rhoOut,rhoOutAE
 
     def CreateCollapseOperators(self,gamma20,gamma21):
         L20_TI = np.sqrt(gamma20) * self.raise02.dag() #spontaneous emission from |2> to |0>
@@ -86,9 +99,9 @@ class system():
         return [L20,L21]
         
     
-def PlotRabiOscillations(system,times,rhoIn,doRWA,doAdiabaticElim,AllowSpontEmission):
+def PlotRabiOscillations(system,times,rhoIn,rhoInAE,doRWA,AllowSpontEmission):
 
-    H = system.MakeHamiltonian(doRWA,doAdiabaticElim)
+    H_eff,H = system.MakeHamiltonian(doRWA)
 
     if(AllowSpontEmission):
         cOps = system.CreateCollapseOperators(gamma20,gamma21)
@@ -96,11 +109,14 @@ def PlotRabiOscillations(system,times,rhoIn,doRWA,doAdiabaticElim,AllowSpontEmis
 
     else:
         result = mesolve(H,rhoIn,times,[],[])
+
+    resultAE = mesolve(H_eff,rhoInAE,times,[],[])
         
     #Need to transform out of the frame with exp(-iH_Dt/hbar) rhoOut exp(iH_Dt/hbar)
-    rhoOut = system.TransformFrame(result.states,times)
+    rhoOut,rhoOutAE = system.TransformFrame(result.states,resultAE.states,times)
 
     plt.plot(times,expect(fock_dm(3,1) - fock_dm(3,0),rhoOut), label='Expectation value of σz')
+    plt.plot(times,expect(fock_dm(2,1) - fock_dm(2,0),rhoOutAE), label='Expectation value of σz with adiabatic elimination')
     plt.plot(times,expect(fock_dm(3,2),rhoOut),label='Expectation population of intermediate state')
     print('Producing plot of Rabi oscillations for Raman transitions with detunings Δ = ' + str(round(system.delta1, 3)) + '/s, δ = ' + str(round(system.delta2, 3))+ '/s.')
     plt.title('Rabi oscillations via Raman transitions')
@@ -116,8 +132,7 @@ def CalculateACSSDetuning(Omega_Rp,Omega_Rc,delta1,delta2):
 #--------------------------------------------- Raman Simulation Parameters ------------------------------------------
 
 doRWA = True
-doAdiabaticElim = False
-AllowSpontEmission = False
+AllowSpontEmission = True
 CorrectACSS = True #Correct against AC Stark Shift
 
 #We require for 2 photon Raman transitions that:
@@ -132,7 +147,7 @@ w12 = 3 * np.pi
 delta1 = 0.1 * np.pi #Single photon detuning
 delta2 = 0.0001 * np.pi #2 photon detuning
 
-if(CorrectACSS):
+if(CorrectACSS): #Correct against AC Stark Shift
     delta2 = CalculateACSSDetuning(Omega_Rp,Omega_Rc,delta1,delta2)
 
 wp = delta1 + w02 #Probe Laser Frequency
@@ -146,12 +161,9 @@ gamma21 = 0.005
 sys = system(w02,w12,Omega_Rp,Omega_Rc,wp,wc)
 
 times = np.linspace(0,10000,1000)
+
 rhoIn = fock_dm(3,0)
+rhoInAE = fock_dm(2,0)
 
-PlotRabiOscillations(sys,times,rhoIn,doRWA,doAdiabaticElim,AllowSpontEmission)
-
-
-
-
-    
+PlotRabiOscillations(sys,times,rhoIn,rhoInAE,doRWA,AllowSpontEmission)
 
