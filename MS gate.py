@@ -140,16 +140,14 @@ class system():
 def doHadamard(system,rho,tRot):
 
     #H = Rx(pi/2) Ry(pi/2) Rx(pi/2) Ry(pi/2) Rx (-pi/2)
+    Rx2 = system.MakeHamiltonian([w0],[0],True)
+    Ry2 = system.MakeHamiltonian([w0],[np.pi/2],True)
     
-    Rxp = system.MakeHamiltonian([w0],[0],True)
-    Ryp = system.MakeHamiltonian([w0],[np.pi/2],True)
-    Rxm = system.MakeHamiltonian([w0],[np.pi],True)
-    
-    rho = mesolve(Rxm,rho,np.linspace(0,tRot,100),[],[]).states[-1]
-    rho = mesolve(Ryp,rho,np.linspace(0,tRot,100),[],[]).states[-1]
-    rho = mesolve(Rxp,rho,np.linspace(0,tRot,100),[],[]).states[-1]
-    rho = mesolve(Ryp,rho,np.linspace(0,tRot,100),[],[]).states[-1]
-    rho = mesolve(Rxp,rho,np.linspace(0,tRot,100),[],[]).states[-1]
+    rho = mesolve(Rx2,rho,np.linspace(0,3*tRot,100),[],[]).states[-1]
+    rho = mesolve(Ry2,rho,np.linspace(0,tRot,100),[],[]).states[-1]
+    rho = mesolve(Rx2,rho,np.linspace(0,tRot,100),[],[]).states[-1]
+    rho = mesolve(Ry2,rho,np.linspace(0,tRot,100),[],[]).states[-1]
+    rho = mesolve(Rx2,rho,np.linspace(0,tRot,100),[],[]).states[-1]
     return rho
 
 def SimulateGate(system,gateFrequencies,gatePhases,times,rhoIn,inputType,numSamplesPerGate,correctOutput):
@@ -157,39 +155,32 @@ def SimulateGate(system,gateFrequencies,gatePhases,times,rhoIn,inputType,numSamp
     if makeCNOT: #Implement a controlled phase gate from the MS gate using single qubit rotations on either side.
 
         #For all single qubit gates, we implement a rotation by pi/2.
-        #This is achieved by undergoing Rabi oscillations with t = pi/(2 * Omega_R)
+        #This is achieved by undergoing carrier Rabi oscillations with t = pi/(2 * Omega_R)
         tRot = np.pi/(2 * Omega_R)
-        rhoIn = doHadamard(system,rhoIn,tRot)
+        Rx = system.MakeHamiltonian([w0],[0])
+        Ry = system.MakeHamiltonian([w0],[np.pi/2])
 
-        #Apply Hadamard to just the second ion
-        U1 = system.MakeHamiltonian([w0],[np.pi/2])
-        rhoOut = mesolve(U1,rhoIn,np.linspace(0,tRot,100),[],[]).states[-1]
+        '''
+        To implement the MS gate, first we diagonalise the MS unitary by transforming basis
+        by a pi/2 rotation about the y-axis. We then apply a rotation by pi/2 about the
+        z-axis to create the controlled-phase gate. Lastly, we apply Hadamard to either
+        side on just the second ion to construct CNOT.
+        '''
+        
+        rhoOut = doHadamard(system,rhoIn,tRot) #Hadamard
+        
+        rhoOut = mesolve(Ry,rhoOut,np.linspace(0,tRot,100),[],[]).states[-1] #Transform to diagonal basis
 
-        #Rotate by pi/2 about y-axis:
-        U1 = system.MakeHamiltonian([w0],[np.pi/2])
-        rhoOut = mesolve(U1,rhoIn,np.linspace(0,tRot,100),[],[]).states[-1]
-
-        #Do MS-gate
-        H_MS = system.MakeHamiltonian(gateFrequencies,gatePhases)
+        H_MS = system.MakeHamiltonian(gateFrequencies,gatePhases) #Apply MS gate
         rhoOut = mesolve(H_MS,rhoOut,times,[],[]).states[numSamplesPerGate]
         
-        #Rotate by -pi/2 about y-axis:
-        U2 = system.MakeHamiltonian([w0],[3 * np.pi/2])
-        rhoOut = mesolve(U2,rhoOut,np.linspace(0,tRot,100),[],[]).states[-1]
-
-        #Rotate by -pi/2 about x-axis:
-        U3 = system.MakeHamiltonian([w0],[np.pi])
-        rhoOut = mesolve(U3,rhoOut,np.linspace(0,tRot,100),[],[]).states[-1]
-
-        #Rotate by -pi/2 obout y-axis again:
-        rhoOut = mesolve(U2,rhoOut,np.linspace(0,tRot,100),[],[]).states[-1]
-
-        #Rotate by pi/2 about x-axis:
-        U4 = system.MakeHamiltonian([w0],[0])
-        rhoOut = mesolve(U4,rhoOut,np.linspace(0,tRot,100),[],[]).states[-1]
-
-        #Do Hadamard
-        rhoOut = doHadamard(system,rhoOut,tRot)
+        rhoOut = mesolve(Ry,rhoOut,np.linspace(0,3*tRot,100),[],[]).states[-1] #Transform back to computational basis
+        
+        rhoOut = mesolve(Rx,rhoOut,np.linspace(0,3*tRot,100),[],[]).states[-1] #Apply Rz(-pi/2) to make C-Z
+        rhoOut = mesolve(Ry,rhoOut,np.linspace(0,3*tRot,100),[],[]).states[-1]
+        rhoOut = mesolve(Rx,rhoOut,np.linspace(0,tRot,100),[],[]).states[-1]
+        
+        rhoOut = doHadamard(system,rhoOut,tRot) #Hadamard
 
         #Trace out phonon space:
         rhoOut = rhoOut.ptrace([0,1])
@@ -305,7 +296,7 @@ print('Generating MS gate simulation with Rabi frequency ' + str(np.round(Omega_
 #For adiabatic regime, need detuning to be large compared to sideband and carrier Rabi frequencies.
 #We want these all to be large:
 print('\nδ/(Ωᵣ * η * sqrt(n)/2) = ' + str(np.round(delta/(0.5 * Omega_R * eta * np.sqrt(numPhonons + 1)),4)))
-print('(ν₀ + δ) / (Ω_eff)  *  = ' + str(np.round((wCOM + delta) * 2 * delta/(Omega_R**2 * eta**2),4)))
+print('(ν₀ + δ) / Ω_eff = ' + str(np.round((wCOM + delta) * 2 * delta/(Omega_R**2 * eta**2),4)))
 print('(ν₀ + δ) / Ωᵣ = ' + str(np.round((wCOM + delta)/Omega_R,4)))
 
 #For the MS-gate, we tune one laser to the red sideband transition, and one to the blue sideband transition.
