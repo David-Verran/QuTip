@@ -155,6 +155,7 @@ class system():
             H_int = H_red + H_blue + H_carr
         else:
             H_int = H_red + H_blue
+
         return H_int
 
     def GetcOps(self,gammas):
@@ -167,8 +168,9 @@ class system():
         L_PD2 = tensor(qeye(2), np.sqrt(gammas[1]) * sigmaz(),qeye(maxNumPhonons))
 
         L_heating = tensor(qeye(2),qeye(2),np.sqrt(gammas[2])* create(maxNumPhonons))
+        L_cooling = tensor(qeye(2),qeye(2),np.sqrt(gammas[3])* destroy(maxNumPhonons))
 
-        L = [[L_SE1,L_SE_coeff],[L_SE2,L_SE_coeff],L_PD1,L_PD2,L_heating]
+        L = [[L_SE1,L_SE_coeff],[L_SE2,L_SE_coeff],L_PD1,L_PD2,L_heating,L_cooling]
         return L
 
 def doHadamard(system,rho,tRot,cOps):
@@ -261,69 +263,110 @@ def CalculateDetuning(Omega_R,eta,m):
     
 def RunSimulations():
 
-    if plotAllInputs:
-        fig, axs = plt.subplots(2, 2)
-    
-        if not makeCNOT:
-            for i in range(2):
-                for j in range(2):
+    if not plotPhononTrajectories:
 
-                    #Define sigma_z for the ee,gg or eg,ge subspace:
-                    sz = tensor(((tensor(fock(2,1-i),fock(2,1-j)))*(tensor(fock(2,1-i),fock(2,1-j)).dag())),qeye(maxNumPhonons)) \
-                         - tensor(((tensor(fock(2,i),fock(2,j)))*(tensor(fock(2,i),fock(2,j)).dag())),qeye(maxNumPhonons))
-                    rho = SimulateGate(sys,gateFrequencies,gatePhases,gammas,times,inputdms[i][j],inputLabels[i][j],numSamplesPerGate,correctOutputs[i][j])
-                    #axs[i, j].plot(times,expect(tensor((fock(2,1)*fock(2,1).dag() - fock(2,0)*fock(2,0).dag()),qeye(2),qeye(maxNumPhonons)),rho), label="⟨σ_z⟩ for Atom 1")
-                    #axs[i, j].plot(times,expect(tensor(qeye(2),(fock(2,1)*fock(2,1).dag() - fock(2,0)*fock(2,0).dag()),qeye(maxNumPhonons)),rho), label="⟨σ_z⟩ for Atom 2")
-                    #axs[i, j].plot(times,AdiabaticEliminationPrediction(times), label="⟨σ_z⟩ prediction from adiabatic elimination")
-                    axs[i, j].plot(times * 1000,expect(sz,rho), label="⟨σ_z⟩ for 2-qubit computational subspace")
-                    axs[i, j].plot(times[numSamplesPerGate] * 1000,expect(sz,rho[numSamplesPerGate]), marker='x',color = 'red')
-                    axs[i, j].plot(times * 1000,expect(tensor(qeye(2),qeye(2), create(maxNumPhonons) * destroy(maxNumPhonons)),rho), color='orange', label="Number of Phonons")
-                    axs[i, j].plot(times * 1000, [1]*len(times), linestyle='dashed', markersize=1,color = 'green')
-                    axs[i, j].text(times[numSamplesPerGate] * 1000,expect(sz,rho[numSamplesPerGate]), 'Gate Output', fontsize=8, horizontalalignment='left',verticalalignment='top')
-                    axs[i, j].set_title('Rabi Oscillations for input = |' + inputLabels[i][j] + '⟩')
-                    axs[i, j].legend(loc="lower right")
-    
-                #print(rho[len(times)-1].ptrace([0,1]))
-
-            fig.suptitle('MS gate simulation: Ωᵣ = ' + str(np.round(sys.Omega_R,4)) + ', ω₀ = ' + str(np.round(sys.w0,4)) + ', ν₀ = ' + str(np.round(sys.v0,4)) + ', η = ' + str(np.round(sys.eta,4)) + ' and δ = '+ str(np.round(wL2 - sys.w0 - sys.v0,4)))
-            for ax in axs.flat:
-                ax.set(xlabel='Time (ms)', ylabel='Expectation values for populations')
-                ax.label_outer()
-            plt.show()
-
-        else:
-            for i in range(2):
-                for j in range(2):
-                    rho = SimulateGate(sys,gateFrequencies,gatePhases,gammas,times,inputdms[i][j],inputLabels[i][j],numSamplesPerGate,correctOutputs[i][j])
-                    visualization.hinton(rho,ax=axs[i][j])
-                    axs[i, j].set_title('C-NOT gate output for input |' + inputLabels[i][j] + '⟩')
-            fig.suptitle('MS gate simulation: Ωᵣ = ' + str(np.round(sys.Omega_R,4)) + ', ω₀ = ' + str(np.round(sys.w0,4)) + ', ν₀ = ' + str(np.round(sys.v0,4)) + ', η = ' + str(np.round(sys.eta,4)) + ' and δ = '+ str(np.round(wL2 - sys.w0 - sys.v0,4)))
-            plt.show()
-    else:
+        if plotAllInputs:
+            fig, axs = plt.subplots(2, 2)
         
-        #we just plot the gg <-> ee transition
-    
-        if not makeCNOT:
+            if not makeCNOT:
+                for i in range(2):
+                    for j in range(2):
 
-            #Define sigma_z for the ee,gg or eg,ge subspace:
-            sz = tensor(((tensor(fock(2,1),fock(2,1)))*(tensor(fock(2,1),fock(2,1)).dag())),qeye(maxNumPhonons)) \
-                 - tensor(((tensor(fock(2,0),fock(2,0)))*(tensor(fock(2,0),fock(2,0)).dag())),qeye(maxNumPhonons))
+                        #Define sigma_z for the ee,gg or eg,ge subspace:
+                        sz = tensor(((tensor(fock(2,1-i),fock(2,1-j)))*(tensor(fock(2,1-i),fock(2,1-j)).dag())),qeye(maxNumPhonons)) \
+                             - tensor(((tensor(fock(2,i),fock(2,j)))*(tensor(fock(2,i),fock(2,j)).dag())),qeye(maxNumPhonons))
+                        rho = SimulateGate(sys,gateFrequencies,gatePhases,gammas,times,inputdms[i][j],inputLabels[i][j],numSamplesPerGate,correctOutputs[i][j])
+                        #axs[i, j].plot(times,expect(tensor((fock(2,1)*fock(2,1).dag() - fock(2,0)*fock(2,0).dag()),qeye(2),qeye(maxNumPhonons)),rho), label="⟨σ_z⟩ for Atom 1")
+                        #axs[i, j].plot(times,expect(tensor(qeye(2),(fock(2,1)*fock(2,1).dag() - fock(2,0)*fock(2,0).dag()),qeye(maxNumPhonons)),rho), label="⟨σ_z⟩ for Atom 2")
+                        #axs[i, j].plot(times,AdiabaticEliminationPrediction(times), label="⟨σ_z⟩ prediction from adiabatic elimination")
+                        axs[i, j].plot(times * 1000,expect(sz,rho), label="⟨σ_z⟩ for 2-qubit computational subspace")
+                        axs[i, j].plot(times[numSamplesPerGate] * 1000,expect(sz,rho[numSamplesPerGate]), marker='x',color = 'red')
+                        axs[i, j].plot(times * 1000,expect(tensor(qeye(2),qeye(2), create(maxNumPhonons) * destroy(maxNumPhonons)),rho), color='orange', label="Number of Phonons")
+                        axs[i, j].plot(times * 1000, [1]*len(times), linestyle='dashed', markersize=1,color = 'green')
+                        axs[i, j].text(times[numSamplesPerGate] * 1000,expect(sz,rho[numSamplesPerGate]), 'Gate Output', fontsize=8, horizontalalignment='left',verticalalignment='top')
+                        axs[i, j].set_title('Rabi Oscillations for input = |' + inputLabels[i][j] + '⟩')
+                        axs[i, j].legend(loc="lower right")
+        
+                    #print(rho[len(times)-1].ptrace([0,1]))
+
+                fig.suptitle('MS gate simulation: Ωᵣ = ' + str(np.round(sys.Omega_R,4)) + ', ω₀ = ' + str(np.round(sys.w0,4)) + ', ν₀ = ' + str(np.round(sys.v0,4)) + ', η = ' + str(np.round(sys.eta,4)) + ' and δ = '+ str(np.round(wL2 - sys.w0 - sys.v0,4)))
+                for ax in axs.flat:
+                    ax.set(xlabel='Time (ms)', ylabel='Expectation values for populations')
+                    ax.label_outer()
+
+            else:
+                for i in range(2):
+                    for j in range(2):
+                        rho = SimulateGate(sys,gateFrequencies,gatePhases,gammas,times,inputdms[i][j],inputLabels[i][j],numSamplesPerGate,correctOutputs[i][j])
+                        visualization.hinton(rho,ax=axs[i][j])
+                        axs[i, j].set_title('C-NOT gate output for input |' + inputLabels[i][j] + '⟩')
+                fig.suptitle('MS gate simulation: Ωᵣ = ' + str(np.round(sys.Omega_R,4)) + ', ω₀ = ' + str(np.round(sys.w0,4)) + ', ν₀ = ' + str(np.round(sys.v0,4)) + ', η = ' + str(np.round(sys.eta,4)) + ' and δ = '+ str(np.round(wL2 - sys.w0 - sys.v0,4)))
+        else:
+            
+            #we just plot the gg <-> ee transition
+        
+            if not makeCNOT:
+
+                #Define sigma_z for the ee,gg or eg,ge subspace:
+                sz = tensor(((tensor(fock(2,1),fock(2,1)))*(tensor(fock(2,1),fock(2,1)).dag())),qeye(maxNumPhonons)) \
+                     - tensor(((tensor(fock(2,0),fock(2,0)))*(tensor(fock(2,0),fock(2,0)).dag())),qeye(maxNumPhonons))
+                rho = SimulateGate(sys,gateFrequencies,gatePhases,gammas,times,inputdms[0][0],inputLabels[0][0],numSamplesPerGate,correctOutputs[0][0])
+                
+                plt.plot(times * 1000,expect(sz,rho), label="Expectation value of |ee⟩⟨ee| - |gg⟩⟨gg|")
+                plt.plot(times * 1000,expect(tensor(qeye(2),qeye(2), create(maxNumPhonons) * destroy(maxNumPhonons)),rho), color='orange', label="Expected number of phonons")
+                plt.plot(times * 1000, [1]*len(times), linestyle='dashed', markersize=1,color = 'green')
+                if showGateOutput:
+                    plt.plot(times[numSamplesPerGate] * 1000,expect(tensor(qeye(2),qeye(2), create(maxNumPhonons) * destroy(maxNumPhonons)),rho[numSamplesPerGate]), marker='x',color = 'red')
+                    plt.plot(times[numSamplesPerGate] * 1000,expect(sz,rho[numSamplesPerGate]), marker='x',color = 'red')
+                    plt.text(times[numSamplesPerGate] * 1000,expect(sz,rho[numSamplesPerGate]), 'Gate Output', fontsize=15, horizontalalignment='left',verticalalignment='top')
+                plt.title('Rabi oscillations for |gg⟩ ↔ |ee⟩ for Ωᵣ = ' + str(np.round(sys.Omega_R/(2 * np.pi * (10**6)),4)) + 'MHz, ν₀ = ' + str(np.round(sys.v0/(2 * np.pi * (10**6)),4)) + 'MHz, η = ' + str(np.round(sys.eta,4)) + ' and δ = '+ str(np.round((wL2 - sys.w0 - sys.v0)/(2 * np.pi * (10**3)),4)) + 'kHz', fontsize=20)
+                plt.legend(loc="lower right", fontsize=15)
+                plt.xlabel('Time (ms)', fontsize=15)
+                plt.ylabel('Expectation values for populations', fontsize=15)
+                
+
+            else:
+                print('Error: Cannot make CNOT with just one input.')
+
+    else:
+
+        if not makeCNOT and not plotAllInputs:
+
+            x = 0.5 * (create(maxNumPhonons) + destroy(maxNumPhonons))
+            p = -0.5j * (destroy(maxNumPhonons) - create(maxNumPhonons))
+
+            Omega = Omega_R**2 * eta**2 / (2 * delta)
+            gg = tensor(fock(2,0),fock(2,0),qeye(maxNumPhonons))
+            ge = tensor(fock(2,0),fock(2,1),qeye(maxNumPhonons))
+            eg = tensor(fock(2,1),fock(2,0),qeye(maxNumPhonons))
+            ee = tensor(fock(2,1),fock(2,1),qeye(maxNumPhonons))
+
+            eegg = 1/np.sqrt(2) * (ee + gg)
+            egge = 1/np.sqrt(2) * (eg + ge)
+
+            eegg_ = 1/np.sqrt(2) * (ee - gg)
+            egge_ = 1/np.sqrt(2) * (eg - ge)
+            
+            def getRotationUnitary(t):
+                return np.exp(1j * Omega/2 * (t - 1/delta * np.sin(delta * t)) * 4) \
+                       * (eegg * eegg.dag() + egge * egge.dag())\
+                        + (eegg_ * eegg_.dag() + egge_ * egge_.dag())
+            
             rho = SimulateGate(sys,gateFrequencies,gatePhases,gammas,times,inputdms[0][0],inputLabels[0][0],numSamplesPerGate,correctOutputs[0][0])
-            plt.plot(times * 1000,expect(sz,rho), label="Expectation value of |ee⟩⟨ee| - |gg⟩⟨gg|")
-            plt.plot(times * 1000,expect(tensor(qeye(2),qeye(2), create(maxNumPhonons) * destroy(maxNumPhonons)),rho), color='orange', label="Expected number of phonons")
-            plt.plot(times * 1000, [1]*len(times), linestyle='dashed', markersize=1,color = 'green')
-            if showGateOutput:
-                plt.plot(times[numSamplesPerGate] * 1000,expect(tensor(qeye(2),qeye(2), create(maxNumPhonons) * destroy(maxNumPhonons)),rho[numSamplesPerGate]), marker='x',color = 'red')
-                plt.plot(times[numSamplesPerGate] * 1000,expect(sz,rho[numSamplesPerGate]), marker='x',color = 'red')
-                plt.text(times[numSamplesPerGate] * 1000,expect(sz,rho[numSamplesPerGate]), 'Gate Output', fontsize=15, horizontalalignment='left',verticalalignment='top')
-            plt.title('Rabi oscillations for |gg⟩ ↔ |ee⟩ for Ωᵣ = ' + str(np.round(sys.Omega_R/(2 * np.pi * (10**6)),4)) + 'MHz, ν₀ = ' + str(np.round(sys.v0/(2 * np.pi * (10**6)),4)) + 'MHz, η = ' + str(np.round(sys.eta,4)) + ' and δ = '+ str(np.round((wL2 - sys.w0 - sys.v0)/(2 * np.pi * (10**3)),4)) + 'kHz', fontsize=20)
+            for i in range(len(rho)):
+                if rotateWithGate:
+                    U_rotate = getRotationUnitary(times[i])
+                    rho[i] = U_rotate * rho[i] * U_rotate.dag()
+                rho[i] = rho[i].ptrace(2)
+            plt.plot(expect(x,rho), expect(p,rho), label= "n = " + str(avgNumPhonons))
+            plt.title('Phonon trajectories for Ωᵣ = ' + str(np.round(sys.Omega_R/(2 * np.pi * (10**6)),4)) + 'MHz, ν₀ = ' + str(np.round(sys.v0/(2 * np.pi * (10**6)),4)) + 'MHz, η = ' + str(np.round(sys.eta,4)) + ' and δ = '+ str(np.round((wL2 - sys.w0 - sys.v0)/(2 * np.pi * (10**3)),4)) + 'kHz', fontsize=20)
             plt.legend(loc="lower right", fontsize=15)
-            plt.xlabel('Time (ms)', fontsize=15)
-            plt.ylabel('Expectation values for populations', fontsize=15)
-            plt.show()
+            plt.xlabel('⟨x⟩', fontsize=15)
+            plt.ylabel('⟨p⟩', fontsize=15)
+            plt.axis('equal')
 
         else:
-            print('Error: Cannot make CNOT with just one input.')
+            print('Error: For phonon phase space plots, makeCNOT and plotAllInputs must be False')
 
 #----------------------------------------Simulation Parameters---------------------------------
 
@@ -333,33 +376,35 @@ includeCarrier = True
 
 showGateOutput = True
 plotAllInputs = False
-#Note if makeCNOT, includeCarrier must be True.
+plotPhononTrajectories = False
+
+rotateWithGate = True #for phonon trajectory plotting.
 
 if makeCNOT:
     print('Implementing C-NOT with MS gate')
 
-Omega_R = 0.5 * 10**6
+Omega_R = 0.2 * 10**6
 w0 = 2585672965.92 * 10**6
 v0 = 2 * np.pi * 10**6
 eta = 0.06
 
 #Noise
-#spontaneous emission, phase damping, heating:
-gammas = [0,0,0.5* 10**3]
+#spontaneous emission, phase damping, heating, cooling:
+gammas = [0,0,100,102]
 
-avgNumPhonons = 0.2 #Assume cooled very close to zero.
-maxNumPhonons = int(np.ceil(avgNumPhonons)) + 14 #Allow for many phonons to avoid truncation error.
+avgNumPhonons = 0.2
+maxNumPhonons = int(np.ceil(avgNumPhonons)) + 15 #Allow for many phonons to avoid truncation error.
 
-m = 3 #Detuning parameter.
+m = 3 #Detuning parameter
 print('m = ' + str(m))
 delta = CalculateDetuning(Omega_R,eta,m)
-print('Generating MS gate simulation with Rabi frequency ' + str(np.round(Omega_R,4)) + ', qubit energy spacing ' + str(np.round(w0,4)) + ', COM mode phonon energy ' + str(np.round(v0,4)) + ', Raman detuning ' + str(np.round(delta,4)) + ' and Lamb-Dicke factor ' + str(np.round(eta,4)) + '.')
+#print('Generating MS gate simulation with Rabi frequency ' + str(np.round(Omega_R,4)) + ', qubit energy spacing ' + str(np.round(w0,4)) + ', COM mode phonon energy ' + str(np.round(v0,4)) + ', Raman detuning ' + str(np.round(delta,4)) + ' and Lamb-Dicke factor ' + str(np.round(eta,4)) + '.')
 
 #For adiabatic regime, need detuning to be large compared to sideband and carrier Rabi frequencies.
 #We want these all to be large:
-print('\nδ/(Ωᵣ * η * sqrt(n)/2) = ' + str(np.round(delta/(0.5 * Omega_R * eta * np.sqrt(avgNumPhonons + 1)),4)))
-print('(ν₀ + δ) / Ω_eff = ' + str(np.round((v0 + delta) * 2 * delta/(Omega_R**2 * eta**2),4)))
-print('(ν₀ + δ) / Ωᵣ = ' + str(np.round((v0 + delta)/Omega_R,4)))
+#print('\nδ/(Ωᵣ * η * sqrt(n)/2) = ' + str(np.round(delta/(0.5 * Omega_R * eta * np.sqrt(avgNumPhonons + 1)),4)))
+#print('(ν₀ + δ) / Ω_eff = ' + str(np.round((v0 + delta) * 2 * delta/(Omega_R**2 * eta**2),4)))
+#print('(ν₀ + δ) / Ωᵣ = ' + str(np.round((v0 + delta)/Omega_R,4)))
 
 #For the MS-gate, we tune one laser to the red sideband transition, and one to the blue sideband transition.
 wL1 = w0 - v0 - delta #Laser 1 Frequency (red sb)
@@ -378,6 +423,7 @@ rhoIn_gg = tensor(fock_dm(2,0),fock_dm(2,0),thermal_dm(maxNumPhonons,avgNumPhono
 rhoIn_ge = tensor(fock_dm(2,0),fock_dm(2,1),thermal_dm(maxNumPhonons,avgNumPhonons))
 rhoIn_eg = tensor(fock_dm(2,1),fock_dm(2,0),thermal_dm(maxNumPhonons,avgNumPhonons))
 rhoIn_ee = tensor(fock_dm(2,1),fock_dm(2,1),thermal_dm(maxNumPhonons,avgNumPhonons))
+
 inputdms = [[rhoIn_gg,rhoIn_ge],[rhoIn_eg,rhoIn_ee]]
 inputLabels = [['gg','ge'],['eg','ee']]
 
@@ -386,7 +432,7 @@ gateTime = CalculateGateTime(Omega_R, eta, delta)
 print('\nGate time is ' + str(np.round(gateTime * 1000,2)) + ' ms\n')
 
 #Need to ensure the times to simulate includes the gate time:
-numSamplesPerGate = 1000
+numSamplesPerGate = m * 1000
 numGatesToSimulate = 8
 
 tspacing = gateTime/numSamplesPerGate
@@ -401,4 +447,6 @@ correctOutputs = [[ket2dm(tensor(fock(2,0),fock(2,0)) - 1j * tensor(fock(2,1),fo
                   [ket2dm(tensor(fock(2,1),fock(2,0)) - 1j * tensor(fock(2,0),fock(2,1))).unit(),
                    ket2dm(tensor(fock(2,1),fock(2,1)) - 1j * tensor(fock(2,0),fock(2,0))).unit()]]
 
+
 RunSimulations()
+plt.show()
